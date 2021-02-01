@@ -4,30 +4,37 @@ from ipywidgets import widgets, interactive
 import pandas as pd
 import numpy as np
 from scipy import sparse
+from scipy.interpolate import interp2d
 from scipy.sparse.linalg import spsolve
 from pathlib import Path
-
 
 class Mapper:
     x, y = 0, 0
     spec_bgx, dspec_bgx = 0, 0
     mask = []
+    _is_interp = False
 
-    def __init__(self, fname, sx=None, dsx=None):
+    def __init__(self, fname, sx=None, dsx=None, interpolate_to=None):
         self.specx = sx
         self.dspecx = dsx
 
         self.df = pd.read_csv(fname,
-                              sep='\t+',
-                              engine='python',
+                              sep=r'\s+',
                               names=['x', 'y', 'Wavelength', 'Intensity'],
                               index_col=[0, 1, 2])
 
+        self._midx = self.df.index.droplevel(level=2).drop_duplicates()
+        if interpolate_to is not None:
+            #self._midx = pd.MultiIndex.from_arrays(
+            #    (np.around(np.array([*self._midx.to_flat_index().to_numpy()]) / interpolate_to) * interpolate_to ).T)
+            self._midx = interpolate_to
+            self._is_interp = True
+
         self._calculated = False
 
-        self.integrated = pd.DataFrame(index=self.df.index.droplevel(level=2).drop_duplicates(),
+        self.integrated = pd.DataFrame(index=self._midx,
                                        columns=['Intensity'])
-        self.wno = pd.DataFrame(index=self.df.index.droplevel(level=2).drop_duplicates(),
+        self.wno = pd.DataFrame(index=self._midx,
                                 columns=['Intensity'])
 
         self.x, self.y = self.df.index.droplevel(level=2).drop_duplicates()[0]
@@ -61,9 +68,6 @@ class Mapper:
                                           disabled=False,
                                           button_style='',
                                           tooltip='Mask or unmask current data point')
-
-        self.recalc_progress = widgets.IntProgress(value=0, min=0, max=1, step=1, description="",
-                                                   bar_style='', orientation='horizontal')
 
         self.level_slider = widgets.IntSlider(value=10,
                                               min=3,
@@ -125,43 +129,48 @@ class Mapper:
         self.dspecx = delta_central_wavelen
 
     def calculate_2d(self):
-        wlen_axis = self.df.index.get_level_values(2).drop_duplicates()
-        idx_upper = np.argmax(wlen_axis > (self.specx + self.dspecx))
-        idx_lower = np.argmin(wlen_axis < (self.specx - self.dspecx))
-        idx_min = min(idx_upper, idx_lower)
-        idx_max = max(idx_upper, idx_lower)
+        idx = pd.IndexSlice
+        roi = self.df.unstack(level=-1).loc[:,idx[:,self.specx - self.dspecx:self.specx + self.dspecx]]
 
-        no_wlen_points = wlen_axis.shape[0]
-        arr = self.df.values[:, 0]
-        no_points = len(arr) // no_wlen_points
+        x = roi.index.get_level_values(0)
+        y = roi.index.get_level_values(1)
 
-        self.recalc_progress.max = no_points
-        self.recalc_progress.value = 0
+        if self._is_interp:
+            int_interpol = interp2d(x, y, roi.apply(lambda x: x.max(), axis=1).values)
+            self.integrated = pd.DataFrame(int_interpol(self._midx.get_level_values(0).unique(),
+                                                        self._midx.get_level_values(1).unique()).flatten(),
+                                           index=self._midx.sortlevel()[0],
+                                           columns=['Intensity'])
 
-        for i in range(no_points):
-            d = arr[no_wlen_points * i + idx_min:no_wlen_points * i + idx_max]
-
-            idx = d.argmax()
-            self.integrated.iloc[i] = d[idx]
-            self.wno.iloc[i] = wlen_axis[idx_min + idx]
-
-            self.recalc_progress.value += 1
+            wno_interpol = interp2d(x, y, roi.apply(lambda x: x.idxmax()[1], axis=1).values, fill_value=np.nan)
+            self.wno = pd.DataFrame(wno_interpol(self._midx.get_level_values(0).unique(),
+                                                 self._midx.get_level_values(1).unique()).flatten(),
+                                           index=self._midx.sortlevel()[0],
+                                           columns=['Intensity'])
+        else:
+            self.integrated = roi.apply(lambda x: x.max(), axis=1)
+            self.wno = roi.apply(lambda x: x.idxmax()[1], axis=1)
 
         self.x, self.y = self.df.index.droplevel(level=2).drop_duplicates()[0]
 
         self._calculated = True
 
     def get_roi(self):
-        idx = pd.IndexSlice
-        df_roi = self.df.loc[idx[self.x, self.y, :]]
+        if self._is_interp:
+            multidx = self.df.index.droplevel(level=2).drop_duplicates()
+            idx_pos = np.array(list(map(lambda c: np.sqrt((c[0] - self.x) ** 2 + (c[1] - self.y) ** 2),
+                              multidx.to_numpy()))).argmin()
 
+            self.x, self.y = multidx[idx_pos]
+
+        df_roi = self.df.loc[pd.IndexSlice[self.x, self.y, :]]
         return df_roi
 
     def construct_scatter(self):
         df_roi = self.get_roi()
 
-        xpos = self.wno.loc[self.x, self.y].values[0]
-        ypos = self.integrated.loc[self.x, self.y].values[0]
+        xpos = self.wno.loc[self.x, self.y]
+        ypos = self.integrated.loc[self.x, self.y]
 
         self.s = go.Scatter(x=df_roi.index, y=df_roi.values[:, 0])
         self.s_corr = go.Scatter(x=df_roi.index, y=df_roi.values[:, 0])
@@ -251,9 +260,9 @@ class Mapper:
 
         if df.index.size != (x * y):
             fillarr = np.ones(abs(df.index.size - y * x)) * np.nan
-            return np.append(df.values[:, 0], fillarr).reshape(x, y, order='F').T
+            return np.append(df.values, fillarr).reshape(x, y, order='F').T
         else:
-            return df.sort_index().values[:, 0].reshape(x, y, order='C').T
+            return df.sort_index().values.reshape(x, y, order='C').T
 
     def generate_interactive_plot(self):
         if not self._calculated:
@@ -306,7 +315,7 @@ class Mapper:
 
         return widgets.VBox([widgets.HBox([widgets.VBox([self.specx_slider,
                                                          self.dspecx_slider,
-                                                         widgets.HBox([self.recalc_button, self.recalc_progress])]),
+                                                         self.recalc_button]),
                                            widgets.VBox([widgets.HBox([self.contour_select, self.mask_button]),
                                                          self.level_slider])]),
                              self.g])
@@ -346,3 +355,13 @@ class Mapper:
 
         datafile = interactive(choose_file, file=files)
         return datafile
+
+    @staticmethod
+    def generate_eqi_grid(points_per_axis, points_overall, stepsize):
+        x = np.arange(points_overall)
+        y = np.arange(points_overall)
+        for i in range(points_per_axis):
+            x[points_per_axis * i:points_per_axis * (i + 1)] = (np.arange(points_per_axis) * stepsize)[::(-1)**i]
+            y[points_per_axis * i:points_per_axis * (i + 1)] = np.ones(points_per_axis) * i * stepsize
+
+        return pd.MultiIndex.from_arrays([x, y], names=['x', 'y'])
