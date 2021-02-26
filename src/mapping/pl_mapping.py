@@ -4,31 +4,43 @@ from ipywidgets import widgets, interactive
 import pandas as pd
 import numpy as np
 from scipy import sparse
+from scipy.interpolate import interp2d
 from scipy.sparse.linalg import spsolve
+from scipy.optimize import curve_fit
 from pathlib import Path
-
 
 class Mapper:
     x, y = 0, 0
     spec_bgx, dspec_bgx = 0, 0
     mask = []
+    _is_interp = False
 
-    def __init__(self, fname, sx=None, dsx=None):
+    def __init__(self, fname, sx=None, dsx=None, interpolate_to=None):
         self.specx = sx
         self.dspecx = dsx
 
         self.df = pd.read_csv(fname,
-                              sep='\t+',
-                              engine='python',
+                              sep=r'\s+',
                               names=['x', 'y', 'Wavelength', 'Intensity'],
                               index_col=[0, 1, 2])
 
+        self.df = self.df[~self.df.index.duplicated(keep='first')]
+
+        self._midx = self.df.index.droplevel(level=2).drop_duplicates()
+        if interpolate_to is not None:
+            #self._midx = pd.MultiIndex.from_arrays(
+            #    (np.around(np.array([*self._midx.to_flat_index().to_numpy()]) / interpolate_to) * interpolate_to ).T)
+            self._midx = interpolate_to
+            self._is_interp = True
+
         self._calculated = False
 
-        self.integrated = pd.DataFrame(index=self.df.index.droplevel(level=2).drop_duplicates(),
+        self.integrated = pd.DataFrame(index=self._midx,
                                        columns=['Intensity'])
-        self.wno = pd.DataFrame(index=self.df.index.droplevel(level=2).drop_duplicates(),
+        self.wno = pd.DataFrame(index=self._midx,
                                 columns=['Intensity'])
+        self.peak_gauss = pd.DataFrame(index=self._midx,
+                                       columns=['Intensity'])
 
         self.x, self.y = self.df.index.droplevel(level=2).drop_duplicates()[0]
         wnumber = self.df.index.get_level_values(2).drop_duplicates()
@@ -62,17 +74,44 @@ class Mapper:
                                           button_style='',
                                           tooltip='Mask or unmask current data point')
 
-        self.recalc_progress = widgets.IntProgress(value=0, min=0, max=1, step=1, description="",
-                                                   bar_style='', orientation='horizontal')
-
         self.level_slider = widgets.IntSlider(value=10,
                                               min=3,
                                               max=50,
                                               description='Lvls',
                                               disabled=False)
 
+        self.gauss_amp = widgets.FloatText(value=488,
+                                           description="Gauss A",
+                                           disabled=False)
+        
+        self.gauss_sigma = widgets.FloatText(value=6.1,
+                                            description="Gauss Sigma",
+                                            disabled=False)
+
+        self.gauss_mu = widgets.FloatText(value=370,
+                                          description="Gauss mu",
+                                          disabled=False)
+
+        self.lorentz_amp = widgets.FloatText(value=667,
+                                            description="Lor A",
+                                            disabled=False)
+        
+        self.lorentz_sigma = widgets.FloatText(value=7,
+                                            description="Lor Sigma",
+                                            disabled=False)
+
+        self.lorentz_mu = widgets.FloatText(value=387,
+                                          description="Lor mu",
+                                          disabled=False)
+
+        self.offset = widgets.FloatText(value=0,
+                                        description="Offset",
+                                        disabled=False)
+
+
+
         self.contour_select = widgets.Dropdown(
-            options=['Signal', 'Position'],
+            options=['Signal', 'Position', 'Relative Intensity'],
             value='Signal',
             description='Display',
             disabled=False
@@ -124,44 +163,84 @@ class Mapper:
         self.specx = central_wavelen
         self.dspecx = delta_central_wavelen
 
+    def fit_peaks(self, spectrum):
+        params = [self.gauss_amp.value, 
+                  self.gauss_sigma.value, 
+                  self.gauss_mu.value, 
+                  self.lorentz_amp.value, 
+                  self.lorentz_sigma.value, 
+                  self.lorentz_mu.value, 
+                  self.offset.value]
+
+        popt, _ = curve_fit(Mapper.lorentzgauss, spectrum.index.get_level_values(1), spectrum.values, p0=params)
+
+        self.gauss_amp.value = popt[0]
+        self.gauss_sigma.value = popt[1]
+        self.gauss_mu.value = popt[2]
+        self.lorentz_amp.value = popt[3]
+        self.lorentz_sigma.value = popt[4]
+        self.lorentz_mu.value = popt[5]
+        self.offset.value = popt[6] 
+
+        return popt
+
+    def relative(self, spectrum):
+        popt = self.fit_peaks(spectrum)
+
+        return popt[0] / popt[3]
+
+
+    def relative_max(self, spectrum):
+        two_max = spectrum.nlargest(2).sort_index()
+
+        return two_max[0] / two_max[1]
+
+
     def calculate_2d(self):
-        wlen_axis = self.df.index.get_level_values(2).drop_duplicates()
-        idx_upper = np.argmax(wlen_axis > (self.specx + self.dspecx))
-        idx_lower = np.argmin(wlen_axis < (self.specx - self.dspecx))
-        idx_min = min(idx_upper, idx_lower)
-        idx_max = max(idx_upper, idx_lower)
+        idx = pd.IndexSlice
+        roi = self.df.unstack(level=-1).loc[:,idx[:,self.specx - self.dspecx:self.specx + self.dspecx]]
 
-        no_wlen_points = wlen_axis.shape[0]
-        arr = self.df.values[:, 0]
-        no_points = len(arr) // no_wlen_points
+        x = roi.index.get_level_values(0)
+        y = roi.index.get_level_values(1)
 
-        self.recalc_progress.max = no_points
-        self.recalc_progress.value = 0
+        if self._is_interp:
+            int_interpol = interp2d(x, y, roi.apply(lambda x: x.max(), axis=1).values)
+            self.integrated = pd.DataFrame(int_interpol(self._midx.get_level_values(0).unique(),
+                                                        self._midx.get_level_values(1).unique()).flatten(),
+                                           index=self._midx.sortlevel()[0],
+                                           columns=['Intensity'])
 
-        for i in range(no_points):
-            d = arr[no_wlen_points * i + idx_min:no_wlen_points * i + idx_max]
-
-            idx = d.argmax()
-            self.integrated.iloc[i] = d[idx]
-            self.wno.iloc[i] = wlen_axis[idx_min + idx]
-
-            self.recalc_progress.value += 1
+            wno_interpol = interp2d(x, y, roi.apply(lambda x: x.idxmax()[1], axis=1).values, fill_value=np.nan)
+            self.wno = pd.DataFrame(wno_interpol(self._midx.get_level_values(0).unique(),
+                                                 self._midx.get_level_values(1).unique()).flatten(),
+                                           index=self._midx.sortlevel()[0],
+                                           columns=['Intensity'])
+        else:
+            self.integrated = roi.apply(lambda x: x.max(), axis=1)
+            self.wno = roi.apply(lambda x: x.idxmax()[1], axis=1)
+            self.peak_gauss = roi.apply(lambda x: self.relative_max(x), axis=1)
+            #self.peak_gauss = roi.apply(lambda x: self.relative(x), axis=1)
 
         self.x, self.y = self.df.index.droplevel(level=2).drop_duplicates()[0]
 
         self._calculated = True
 
     def get_roi(self):
-        idx = pd.IndexSlice
-        df_roi = self.df.loc[idx[self.x, self.y, :]]
+        if self._is_interp:
+            multidx = self.df.index.droplevel(level=2).drop_duplicates()
+            idx_pos = np.array(list(map(lambda c: np.sqrt((c[0] - self.x) ** 2 + (c[1] - self.y) ** 2),
+                              multidx.to_numpy()))).argmin()
 
+            self.x, self.y = multidx[idx_pos]
+
+        df_roi = self.df.loc[pd.IndexSlice[self.x, self.y, :]]
         return df_roi
 
     def construct_scatter(self):
         df_roi = self.get_roi()
 
-        xpos = self.wno.loc[self.x, self.y].values[0]
-        ypos = self.integrated.loc[self.x, self.y].values[0]
+        xpos = self.wno.loc[self.x, self.y]
+        ypos = self.integrated.loc[self.x, self.y]
 
         self.s = go.Scatter(x=df_roi.index, y=df_roi.values[:, 0])
         self.s_corr = go.Scatter(x=df_roi.index, y=df_roi.values[:, 0])
@@ -220,6 +299,9 @@ class Mapper:
         if self.contour_select.value == 'Position':
             self.set_contour(self.wno)
 
+        if self.contour_select.value == 'Relative Intensity':
+            self.set_contour(self.peak_gauss)
+
     def change_levels(self, change):
         self.levels = self.level_slider.value
 
@@ -245,15 +327,19 @@ class Mapper:
         self.change_contour(None)
 
     @staticmethod
+    def lorentzgauss(x, A1, sigma1, mu1, A2, sigma2, mu2, offset):
+        return A1 / sigma1 / np.sqrt(2 * np.pi) * np.exp(-(x - mu1)**2 / 2 / sigma1**2) + A2 / np.pi * sigma2 / ((x - mu2)**2 + sigma2**2) + offset
+
+    @staticmethod
     def reshape_df(df):
         x = df.index.get_level_values(0).nunique()
         y = df.index.get_level_values(1).nunique()
 
         if df.index.size != (x * y):
             fillarr = np.ones(abs(df.index.size - y * x)) * np.nan
-            return np.append(df.values[:, 0], fillarr).reshape(x, y, order='F').T
+            return np.append(df.values, fillarr).reshape(x, y, order='C').T
         else:
-            return df.sort_index().values[:, 0].reshape(x, y, order='C').T
+            return df.sort_index().values.reshape(x, y, order='C').T
 
     def generate_interactive_plot(self):
         if not self._calculated:
@@ -306,9 +392,17 @@ class Mapper:
 
         return widgets.VBox([widgets.HBox([widgets.VBox([self.specx_slider,
                                                          self.dspecx_slider,
-                                                         widgets.HBox([self.recalc_button, self.recalc_progress])]),
+                                                         self.recalc_button]),
                                            widgets.VBox([widgets.HBox([self.contour_select, self.mask_button]),
-                                                         self.level_slider])]),
+                                                         self.level_slider]),
+                                           widgets.VBox([self.gauss_amp,
+                                                        self.gauss_sigma,
+                                                        self.gauss_mu,
+                                                        self.lorentz_amp,
+                                                        self.lorentz_sigma,
+                                                        self.lorentz_mu,
+                                                        self.offset])
+                                            ]),
                              self.g])
 
     @staticmethod
@@ -346,3 +440,13 @@ class Mapper:
 
         datafile = interactive(choose_file, file=files)
         return datafile
+
+    @staticmethod
+    def generate_eqi_grid(points_per_axis, points_overall, stepsize):
+        x = np.arange(points_overall)
+        y = np.arange(points_overall)
+        for i in range(points_per_axis):
+            x[points_per_axis * i:points_per_axis * (i + 1)] = (np.arange(points_per_axis) * stepsize)[::(-1)**i]
+            y[points_per_axis * i:points_per_axis * (i + 1)] = np.ones(points_per_axis) * i * stepsize
+
+        return pd.MultiIndex.from_arrays([x, y], names=['x', 'y'])
