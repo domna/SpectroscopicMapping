@@ -20,3 +20,4 @@ numpy
 scipy
 pandas
 ipywidgets
+h5py
