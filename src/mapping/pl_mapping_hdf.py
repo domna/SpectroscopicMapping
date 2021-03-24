@@ -63,8 +63,6 @@ class Mapper:
                                        columns=['Intensity'])
         self.wno = pd.DataFrame(index=self._midx,
                                 columns=['Intensity'])
-        self.peak_gauss = pd.DataFrame(index=self._midx,
-                                       columns=['Intensity'])
 
         self.x, self.y = self.df.index.drop_duplicates()[0]
         wnumber = self.df.columns
@@ -103,36 +101,6 @@ class Mapper:
                                               max=50,
                                               description='Lvls',
                                               disabled=False)
-
-        self.gauss_amp = widgets.FloatText(value=488,
-                                           description="Gauss A",
-                                           disabled=False)
-        
-        self.gauss_sigma = widgets.FloatText(value=6.1,
-                                            description="Gauss Sigma",
-                                            disabled=False)
-
-        self.gauss_mu = widgets.FloatText(value=370,
-                                          description="Gauss mu",
-                                          disabled=False)
-
-        self.lorentz_amp = widgets.FloatText(value=667,
-                                            description="Lor A",
-                                            disabled=False)
-        
-        self.lorentz_sigma = widgets.FloatText(value=7,
-                                            description="Lor Sigma",
-                                            disabled=False)
-
-        self.lorentz_mu = widgets.FloatText(value=387,
-                                          description="Lor mu",
-                                          disabled=False)
-
-        self.offset = widgets.FloatText(value=0,
-                                        description="Offset",
-                                        disabled=False)
-
-
 
         self.contour_select = widgets.Dropdown(
             options=['Signal', 'Position', 'Relative Intensity'],
@@ -187,38 +155,6 @@ class Mapper:
         self.specx = central_wavelen
         self.dspecx = delta_central_wavelen
 
-    def fit_peaks(self, spectrum):
-        params = [self.gauss_amp.value, 
-                  self.gauss_sigma.value, 
-                  self.gauss_mu.value, 
-                  self.lorentz_amp.value, 
-                  self.lorentz_sigma.value, 
-                  self.lorentz_mu.value, 
-                  self.offset.value]
-
-        popt, _ = curve_fit(Mapper.lorentzgauss, spectrum.index.get_level_values(1), spectrum.values, p0=params)
-
-        self.gauss_amp.value = popt[0]
-        self.gauss_sigma.value = popt[1]
-        self.gauss_mu.value = popt[2]
-        self.lorentz_amp.value = popt[3]
-        self.lorentz_sigma.value = popt[4]
-        self.lorentz_mu.value = popt[5]
-        self.offset.value = popt[6] 
-
-        return popt
-
-    def relative(self, spectrum):
-        popt = self.fit_peaks(spectrum)
-
-        return popt[0] / popt[3]
-
-
-    def relative_max(self, spectrum):
-        two_max = spectrum.nlargest(2).sort_index()
-
-        return two_max[0] / two_max[1]
-
 
     def calculate_2d(self):
         roi = self.df.loc[:,self.specx - self.dspecx:self.specx + self.dspecx]
@@ -242,8 +178,6 @@ class Mapper:
         else:
             self.integrated = roi.apply(lambda x: x.max(), axis=1).sort_index()
             self.wno = roi.apply(lambda x: pd.to_numeric(x).idxmax(), axis=1).sort_index()
-            #self.peak_gauss = roi.apply(lambda x: self.relative_max(x), axis=1)
-            #self.peak_gauss = roi.apply(lambda x: self.relative(x), axis=1)
 
         self.x, self.y = self.df.index.drop_duplicates()[0]
 
@@ -404,19 +338,8 @@ class Mapper:
                                                          self.recalc_button]),
                                            widgets.VBox([widgets.HBox([self.contour_select, self.mask_button]),
                                                          self.level_slider]),
-                                           widgets.VBox([self.gauss_amp,
-                                                        self.gauss_sigma,
-                                                        self.gauss_mu,
-                                                        self.lorentz_amp,
-                                                        self.lorentz_sigma,
-                                                        self.lorentz_mu,
-                                                        self.offset])
-                                            ]),
+                                        ]),
                              self.g])
-
-    @staticmethod
-    def lorentzgauss(x, A1, sigma1, mu1, A2, sigma2, mu2, offset):
-        return A1 / sigma1 / np.sqrt(2 * np.pi) * np.exp(-(x - mu1)**2 / 2 / sigma1**2) + A2 / np.pi * sigma2 / ((x - mu2)**2 + sigma2**2) + offset
 
     @staticmethod
     def reshape_df(df):
@@ -464,13 +387,3 @@ class Mapper:
 
         datafile = interactive(choose_file, file=files)
         return datafile
-
-    @staticmethod
-    def generate_eqi_grid(points_per_axis, points_overall, stepsize):
-        x = np.arange(points_overall)
-        y = np.arange(points_overall)
-        for i in range(points_per_axis):
-            x[points_per_axis * i:points_per_axis * (i + 1)] = (np.arange(points_per_axis) * stepsize)[::(-1)**i]
-            y[points_per_axis * i:points_per_axis * (i + 1)] = np.ones(points_per_axis) * i * stepsize
-
-        return pd.MultiIndex.from_arrays([x, y], names=['x', 'y'])
