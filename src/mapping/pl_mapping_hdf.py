@@ -4,7 +4,7 @@ from ipywidgets import widgets, interactive
 import pandas as pd
 import numpy as np
 from scipy import sparse
-from scipy.interpolate import interp2d
+from scipy.interpolate import griddata
 from scipy.sparse.linalg import spsolve
 from scipy.optimize import curve_fit
 from pathlib import Path
@@ -16,7 +16,7 @@ class Mapper:
     mask = []
     _is_interp = False
 
-    def _read_hdf5_file(self, fname):
+    def _read_hdf5_file(self, fname, interpolate=False):
         f = h5py.File(fname, 'r')
 
         measurement_index = list(f.keys())[0]
@@ -28,30 +28,34 @@ class Mapper:
                             columns=f['{:}/Wavelength'.format(measurement_index)])
         data.columns.name = "Wavelength"
 
+        sensX = []
+        sensY = []
         for x, y in data.index:
-            data.loc[x, y] = np.array(f['{:}/{:}/{:}/Spectrum'.format(measurement_index, x , y)])
+            dataset = f['{:}/{:}/{:}/Spectrum'.format(measurement_index, x , y)]
+            sensX.append(dataset.attrs['Sensor X'])
+            sensY.append(dataset.attrs['Sensor Y'])
+            
+            data.loc[x, y] = np.array(dataset)
     
         # Convert x, y to float
         data.index = data.index.set_levels([data.index.levels[0].astype(float), data.index.levels[1].astype(float)])
+        self._midx = data.index.copy()
+
+        if interpolate:
+            data.index = pd.MultiIndex.from_arrays([sensX, sensY], names=['x', 'y'])
+            self._is_interp = True
 
         f.close()
 
-        self.df = data.sort_index(axis=0)
+        self.df = data
 
-    def __init__(self, fname, sx=None, dsx=None, interpolate_to=None):
+    def __init__(self, fname, sx=None, dsx=None, interpolate=False):
         self.specx = sx
         self.dspecx = dsx
 
-        self._read_hdf5_file(fname)
-
+        self._read_hdf5_file(fname, interpolate)
         self.df = self.df[~self.df.index.duplicated(keep='first')]
-
-        self._midx = self.df.index.drop_duplicates()
-        if interpolate_to is not None:
-            #self._midx = pd.MultiIndex.from_arrays(
-            #    (np.around(np.array([*self._midx.to_flat_index().to_numpy()]) / interpolate_to) * interpolate_to ).T)
-            self._midx = interpolate_to
-            self._is_interp = True
+        self.x, self.y = self.df.index[0]
 
         self._calculated = False
 
@@ -219,24 +223,25 @@ class Mapper:
     def calculate_2d(self):
         roi = self.df.loc[:,self.specx - self.dspecx:self.specx + self.dspecx]
 
-        x = roi.index.get_level_values(0)
-        y = roi.index.get_level_values(1)
+        x, y = roi.index.get_level_values(0), roi.index.get_level_values(1)
 
         if self._is_interp:
-            int_interpol = interp2d(x, y, roi.apply(lambda x: x.max(), axis=1).values)
-            self.integrated = pd.DataFrame(int_interpol(self._midx.get_level_values(0).unique(),
-                                                        self._midx.get_level_values(1).unique()).flatten(),
-                                           index=self._midx.sortlevel()[0],
-                                           columns=['Intensity'])
+            xi, yi = self._midx.get_level_values(0), self._midx.get_level_values(1)
+            
+            self.integrated = pd.DataFrame(griddata((x, y),
+                                                    roi.apply(lambda x: x.max(), axis=1).values,
+                                                    (xi, yi),
+                                                    method='linear'),
+                                            index=self._midx).iloc[:,0].sort_index()
 
-            wno_interpol = interp2d(x, y, roi.apply(lambda x: x.idxmax()[1], axis=1).values, fill_value=np.nan)
-            self.wno = pd.DataFrame(wno_interpol(self._midx.get_level_values(0).unique(),
-                                                 self._midx.get_level_values(1).unique()).flatten(),
-                                           index=self._midx.sortlevel()[0],
-                                           columns=['Intensity'])
+            self.wno = pd.DataFrame(griddata((x, y),
+                                            roi.apply(lambda x: x.max(), axis=1).values,
+                                            (xi, yi),
+                                            method='linear'),
+                                    index=self._midx).iloc[:,0].sort_index()
         else:
-            self.integrated = roi.apply(lambda x: x.max(), axis=1)
-            self.wno = roi.apply(lambda x: pd.to_numeric(x).idxmax(), axis=1)
+            self.integrated = roi.apply(lambda x: x.max(), axis=1).sort_index()
+            self.wno = roi.apply(lambda x: pd.to_numeric(x).idxmax(), axis=1).sort_index()
             #self.peak_gauss = roi.apply(lambda x: self.relative_max(x), axis=1)
             #self.peak_gauss = roi.apply(lambda x: self.relative(x), axis=1)
 
@@ -258,12 +263,12 @@ class Mapper:
     def construct_scatter(self):
         df_roi = self.get_roi()
 
-        xpos = self.wno.loc[self.x, self.y]
-        ypos = self.integrated.loc[self.x, self.y]
+        #xpos = self.wno.loc[self.x, self.y]
+        #ypos = self.integrated.loc[self.x, self.y]
 
         self.s = go.Scatter(x=df_roi.index, y=df_roi.values)
         self.s_corr = go.Scatter(x=df_roi.index, y=df_roi.values)
-        self.s_peak = go.Scatter(x=[xpos], y=[ypos])
+        #self.s_peak = go.Scatter(x=[xpos], y=[ypos])
 
     def update_spectrum(self):
         df_roi = self.get_roi()
@@ -345,21 +350,6 @@ class Mapper:
 
         self.change_contour(None)
 
-    @staticmethod
-    def lorentzgauss(x, A1, sigma1, mu1, A2, sigma2, mu2, offset):
-        return A1 / sigma1 / np.sqrt(2 * np.pi) * np.exp(-(x - mu1)**2 / 2 / sigma1**2) + A2 / np.pi * sigma2 / ((x - mu2)**2 + sigma2**2) + offset
-
-    @staticmethod
-    def reshape_df(df):
-        x = df.index.get_level_values(0).nunique()
-        y = df.index.get_level_values(1).nunique()
-
-        if df.index.size != (x * y):
-            fillarr = np.ones(abs(df.index.size - y * x)) * np.nan
-            return np.append(df.values, fillarr).reshape(x, y, order='C').T
-        else:
-            return df.sort_index().values.reshape(x, y, order='C').T
-
     def generate_interactive_plot(self):
         if not self._calculated:
             return None
@@ -423,6 +413,21 @@ class Mapper:
                                                         self.offset])
                                             ]),
                              self.g])
+
+    @staticmethod
+    def lorentzgauss(x, A1, sigma1, mu1, A2, sigma2, mu2, offset):
+        return A1 / sigma1 / np.sqrt(2 * np.pi) * np.exp(-(x - mu1)**2 / 2 / sigma1**2) + A2 / np.pi * sigma2 / ((x - mu2)**2 + sigma2**2) + offset
+
+    @staticmethod
+    def reshape_df(df):
+        x = df.index.get_level_values(0).nunique()
+        y = df.index.get_level_values(1).nunique()
+
+        if df.index.size != (x * y):
+            fillarr = np.ones(abs(df.index.size - y * x)) * np.nan
+            return np.append(df.values, fillarr).reshape(x, y, order='C').T
+        else:
+            return df.sort_index().values.reshape(x, y, order='C').T
 
     @staticmethod
     def get_xindex(df):
