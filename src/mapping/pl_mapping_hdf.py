@@ -171,7 +171,7 @@ class Mapper:
                                             index=self._midx).iloc[:,0].sort_index()
 
             self.wno = pd.DataFrame(griddata((x, y),
-                                            roi.apply(lambda x: x.max(), axis=1).values,
+                                            roi.apply(lambda x: pd.to_numeric(x).idxmax(), axis=1).values,
                                             (xi, yi),
                                             method='linear'),
                                     index=self._midx).iloc[:,0].sort_index()
