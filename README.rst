@@ -3,17 +3,24 @@ Mapping
 =======
 
 
-Add a short description here!
+A small tool to map three dimensional microscopy/spectroscopic images in jupyter
 
+Installation
+===========
+
+    python setup.py install
+
+or in development mode::
+    python setup.py develop
 
 Description
 ===========
 
-A longer description of your project goes here...
 
+Example usage in jupyter::
 
-Note
-====
+    from mapping.pl_mapping_hdf import Mapper
+    m = Mapper(filename, central_wavelength, bandwidth_wavelength, interpolation=True/False)
+    m.generate_interactive_plot()
 
-This project has been set up using PyScaffold 3.2.3. For details and usage
-information on PyScaffold see https://pyscaffold.org/.
+You should see a 2D Image generated from your data now.

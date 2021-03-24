@@ -2,4 +2,4 @@
 Contributors
 ============
 
-* dobener <florian.dobener@physik.uni-giessen.de>
+* Florian Dobener <florian.dobener@physik.uni-giessen.de>
