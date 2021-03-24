@@ -5,17 +5,11 @@ Mapping
 
 A small tool to map three dimensional microscopy/spectroscopic images in jupyter
 
-Installation
-===========
-
-    python setup.py install
-
-or in development mode::
-    python setup.py develop
-
 Description
 ===========
+Installation::
 
+    python setup.py install
 
 Example usage in jupyter::
 
