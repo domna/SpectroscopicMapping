@@ -103,7 +103,7 @@ class Mapper:
                                               disabled=False)
 
         self.contour_select = widgets.Dropdown(
-            options=['Signal', 'Position', 'Relative Intensity'],
+            options=['Signal', 'Position'],
             value='Signal',
             description='Display',
             disabled=False
@@ -256,9 +256,6 @@ class Mapper:
 
         if self.contour_select.value == 'Position':
             self.set_contour(self.wno)
-
-        if self.contour_select.value == 'Relative Intensity':
-            self.set_contour(self.peak_gauss)
 
     def change_levels(self, change):
         self.levels = self.level_slider.value
