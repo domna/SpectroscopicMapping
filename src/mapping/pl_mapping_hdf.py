@@ -77,13 +77,13 @@ class Mapper:
                                                 min=wnumber.min(),
                                                 max=wnumber.max(),
                                                 step=abs(wnumber[1] - wnumber[0]),
-                                                description='ν',
+                                                description='λ',
                                                 continous_update=False)
         self.dspecx_slider = widgets.FloatSlider(value=50*abs(wnumber[1] - wnumber[0]),
                                                  min=1,
                                                  max=wnumber.max() / 2,
                                                  step=abs(wnumber[1] - wnumber[0]),
-                                                 description='Δν',
+                                                 description='Δλ',
                                                  continous_update=False)
 
         self.recalc_button = widgets.Button(description="Recalculate",
@@ -121,14 +121,18 @@ class Mapper:
     def get_dataframes(self):
         return self.df, self.integrated, self.wno
 
-    def save_to_files(self, base_filename, append_info=False):
+    def save_to_files(self, base_filename, append_info=False, unstacked=False):
         info_string = '_cwave={:.2f}_dcwave={:.2f}'.format(
             self.specx, self.dspecx)
         if append_info:
             base_filename += info_string
 
-        self.apply_mask(self.integrated).to_csv(base_filename + '_integrated.csv')
-        self.apply_mask(self.wno).to_csv(base_filename + '_wavelength.csv')
+        if unstacked:
+            self.apply_mask(self.integrated).unstack().to_csv(base_filename + '_integrated.csv')
+            self.apply_mask(self.wno).unstack().to_csv(base_filename + '_wavelength.csv')
+        else:
+            self.apply_mask(self.integrated).to_csv(base_filename + '_integrated.csv')
+            self.apply_mask(self.wno).to_csv(base_filename + '_wavelength.csv')
 
     def save_current_spectrum_to_file(self, filename):
         df_roi = self.get_roi()
