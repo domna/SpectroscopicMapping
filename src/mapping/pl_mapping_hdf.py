@@ -16,7 +16,7 @@ class Mapper:
     mask = []
     _is_interp = False
 
-    def _read_hdf5_file(self, fname, interpolate=False):
+    def _read_hdf5_file(self, fname, interpolate=False, custom_wavelength=None):
         f = h5py.File(fname, 'r')
 
         measurement_index = list(f.keys())[0]
@@ -24,8 +24,12 @@ class Mapper:
         y = list(f['{:}/{:}'.format(measurement_index, x[0])].keys())
         xm, ym = np.meshgrid(x, y, indexing='ij')
 
-        data = pd.DataFrame(index=pd.MultiIndex.from_arrays([xm.flatten(), ym.flatten()], names=['x', 'y']), 
-                            columns=f['{:}/Wavelength'.format(measurement_index)])
+        if custom_wavelength is None:
+            data = pd.DataFrame(index=pd.MultiIndex.from_arrays([xm.flatten(), ym.flatten()], names=['x', 'y']), 
+                                columns=f['{:}/Wavelength'.format(measurement_index)])
+        else:
+            data = pd.DataFrame(index=pd.MultiIndex.from_arrays([xm.flatten(), ym.flatten()], names=['x', 'y']), 
+                                columns=custom_wavelength)
         data.columns.name = "Wavelength"
 
         sensX = []
@@ -49,11 +53,11 @@ class Mapper:
 
         self.df = data
 
-    def __init__(self, fname, sx=None, dsx=None, interpolate=False):
+    def __init__(self, fname, sx=None, dsx=None, interpolate=False, custom_wavelength=None):
         self.specx = sx
         self.dspecx = dsx
 
-        self._read_hdf5_file(fname, interpolate)
+        self._read_hdf5_file(fname, interpolate, custom_wavelength)
         self.df = self.df[~self.df.index.duplicated(keep='first')]
         self.x, self.y = self.df.index[0]
 
