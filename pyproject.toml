@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "SpectroscopicMapping"
 version = "0.2.0"
 authors = [
-    { name = "Florian Dobener" },
+    {name = "Florian Dobener", email = "github@schroedingerscat.org"}
+]
+maintainers = [
+    {name = "Florian Dobener", email = "github@schroedingerscat.org"}
 ]
 description = "A small tool to map three dimensional microscopy/spectroscopy images in jupyter"
 readme = "README.md"
@@ -14,9 +17,10 @@ license = { file = "LICENSE.txt" }
 requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Operating System :: OS Independent",
 ]
+keywords = ["mapping", "numerical-analysis", "photoluminescence", "raman"]
 dependencies = [
     "plotly",
     "numpy",

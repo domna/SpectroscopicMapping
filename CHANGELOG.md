@@ -1,6 +1,8 @@
 # Changelog
 
-## Version 0.2
+## Version 0.2.0
+
+- Uses pyproject.toml file instead of setup.cfg
 
 ## Version 0.1
 
