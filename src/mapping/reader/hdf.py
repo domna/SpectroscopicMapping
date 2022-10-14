@@ -12,48 +12,50 @@ class HdfReader(Reader):
     """This is a class to read hdf data"""
 
     def read(self, fname: str, interpolate: str, custom_wavelength: pd.Index) -> None:
-        f = h5py.File(fname, "r")
+        with h5py.File(fname, "r") as h5_file:
 
-        measurement_index = list(f.keys())[0]
-        x = list(filter(lambda x: x != "Wavelength", f[measurement_index].keys()))
-        y = list(f[f"{measurement_index}/{x[0]}"].keys())
-        xm, ym = np.meshgrid(x, y, indexing="ij")
-
-        if custom_wavelength is None:
-            data = pd.DataFrame(
-                index=pd.MultiIndex.from_arrays(
-                    [xm.flatten(), ym.flatten()], names=["x", "y"]
-                ),
-                columns=f[f"{measurement_index}/Wavelength"],
+            measurement_index = list(h5_file.keys())[0]
+            x_axis = list(
+                filter(lambda x: x != "Wavelength", h5_file[measurement_index].keys())
             )
-        else:
-            data = pd.DataFrame(
-                index=pd.MultiIndex.from_arrays(
-                    [xm.flatten(), ym.flatten()], names=["x", "y"]
-                ),
-                columns=custom_wavelength,
+            y_axis = list(h5_file[f"{measurement_index}/{x_axis[0]}"].keys())
+            x_meshg, y_meshg = np.meshgrid(x_axis, y_axis, indexing="ij")
+
+            if custom_wavelength is None:
+                data = pd.DataFrame(
+                    index=pd.MultiIndex.from_arrays(
+                        [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
+                    ),
+                    columns=h5_file[f"{measurement_index}/Wavelength"],
+                )
+            else:
+                data = pd.DataFrame(
+                    index=pd.MultiIndex.from_arrays(
+                        [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
+                    ),
+                    columns=custom_wavelength,
+                )
+            data.columns.name = "Wavelength"
+
+            x_pos_sens = []
+            y_pos_sens = []
+            for x_axis, y_axis in data.index:
+                dataset = h5_file[f"{measurement_index}/{x_axis}/{y_axis}/Spectrum"]
+                x_pos_sens.append(dataset.attrs["Sensor X"])
+                y_pos_sens.append(dataset.attrs["Sensor Y"])
+
+                data.loc[x_axis, y_axis] = np.array(dataset)
+
+            # Convert x, y to float
+            data.index = data.index.set_levels(
+                [data.index.levels[0].astype(float), data.index.levels[1].astype(float)]
             )
-        data.columns.name = "Wavelength"
+            self.index = data.index.copy()
 
-        sensX = []
-        sensY = []
-        for x, y in data.index:
-            dataset = f[f"{measurement_index}/{x}/{y}/Spectrum"]
-            sensX.append(dataset.attrs["Sensor X"])
-            sensY.append(dataset.attrs["Sensor Y"])
-
-            data.loc[x, y] = np.array(dataset)
-
-        # Convert x, y to float
-        data.index = data.index.set_levels(
-            [data.index.levels[0].astype(float), data.index.levels[1].astype(float)]
-        )
-        self.index = data.index.copy()
-
-        if interpolate:
-            data.index = pd.MultiIndex.from_arrays([sensX, sensY], names=["x", "y"])
-            self.is_interp = True
-
-        f.close()
+            if interpolate:
+                data.index = pd.MultiIndex.from_arrays(
+                    [x_pos_sens, y_pos_sens], names=["x", "y"]
+                )
+                self.is_interp = True
 
         self.dataframe = data
