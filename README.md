@@ -1,12 +1,9 @@
-=======
-Mapping
-=======
-
+# Mapping
 
 A small tool to map three dimensional microscopy/spectroscopic images in jupyter
 
-Description
-===========
+## Description
+
 Installation::
 
     python setup.py install

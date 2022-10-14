@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SpectroscopicMapping"
+authors = [
+    { name = "Florian Dobener" },
+]
+description = "A small tool to map three dimensional microscopy/spectroscopy images in jupyter"
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "plotly",
+    "numpy",
+    "scipy",
+    "pandas",
+    "ipywidgets",
+    "h5py"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/domna/SpectroscopicMapping"
+"Bug Tracker" = "https://github.com/domna/SpectroscopicMapping/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pylint",
+    "black",
+    "pytest",
+    "pytest-cov",
+]
