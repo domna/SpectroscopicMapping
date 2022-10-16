@@ -1,10 +1,9 @@
 [build-system]
-requires = ["setuptools>=58.1.0"]
+requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "SpectroscopicMapping"
-version = "0.2.0"
 authors = [
     {name = "Florian Dobener", email = "github@schroedingerscat.org"}
 ]
@@ -29,6 +28,7 @@ dependencies = [
     "ipywidgets",
     "h5py"
 ]
+dynamic = ["version"]
 
 [project.urls]
 "Homepage" = "https://github.com/domna/SpectroscopicMapping"
@@ -42,3 +42,7 @@ dev = [
     "pytest-cov",
     "pip-tools"
 ]
+
+[tool.setuptools_scm]
+version_scheme = "python-simplified-semver"
+local_scheme = "node-and-date"
