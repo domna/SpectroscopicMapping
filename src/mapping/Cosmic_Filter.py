@@ -2,63 +2,6 @@ import pandas as pd
 import numpy as np
 
 
-def filter_where(arr, k):
-    """
-    Find values of an input (numpy.ndarray) that are greater than k.
-
-    This function returns values of an input Numpy Array that are greater than
-    a variable k.
-
-    Parameters
-    ----------
-    arr : np.array
-        Input data to search in
-    k : float
-
-    Returns
-    -------
-    np.array
-        A 1D array consisting of values that fullfill the requirement "greater k".
-
-    Examples
-    --------
-    test = np.array([[1, 3, 5, 7], [4, 5, 1, 6], [2, 3, 8, 1], [1, 3, 4, 1]])
-    >>> filter_where(test, 6)
-    array([7, 8])
-
-    """
-    return arr[np.where(arr > k)]
-
-
-def filter_where_ind(arr, k):
-    """
-    Find indices of an input (numpy.ndarray) that are greater than k.
-
-    This function returns indices of values of an input Numpy Array that are greater than
-    a variable k.
-
-    Parameters
-    ----------
-    arr : np.array
-        Input data to search in
-    k : float
-
-    Returns
-    -------
-    np.array
-        A 1D array consisting of 2 1D arrays with index pairs (x, y) of data points
-        that fullfill the requirement "greater k".
-
-    Examples
-    --------
-    test = np.array([[1, 3, 5, 7], [4, 5, 1, 6], [2, 3, 8, 1], [1, 3, 4, 1]])
-    >>> filter_where_ind(test, 6)
-    (array([0, 2], dtype=int64), array([3, 2], dtype=int64))
-
-    """
-    return np.where(arr > k)
-
-
 def filt_surr(surr, perc, mean):
     """
     Simple filter to check whether the input surr is a signal.
@@ -182,15 +125,15 @@ def surr_var_loc(x_indic, y_indic, x_i, y_i, var=1):
     >>> surr_var_loc(2, 2, test_x, test_y, 2)
     [[2, 0], [1, 1], [2, 1], [3, 1], [0, 2], [1, 2], [3, 2], [4, 2], [1, 3], [2, 3], [3, 3], [2, 4]]
     """
-    DOUT = []
+    data_out = []
     iterator_i_x = it_list_var_2(x_indic, x_i, 2 * var)
     iterator_i_y = it_list_var_2(y_indic, y_i, 2 * var)
     for i in iterator_i_y:
         for j in iterator_i_x:  # [abs(i): len(iterator_i_x) - abs(i)]:
             if abs(i) + abs(j) <= var:
-                DOUT.append([int(x_indic + j), int(y_indic + i)])
-    DOUT.remove([int(x_indic), int(y_indic)])
-    return DOUT
+                data_out.append([int(x_indic + j), int(y_indic + i)])
+    data_out.remove([int(x_indic), int(y_indic)])
+    return data_out
 
 
 def find_cosmics(dfin, wv_index, method_i="everything", mask="area", filter_length=8, filter_size=1, peak_to_noise=1.5,
@@ -232,7 +175,6 @@ def find_cosmics(dfin, wv_index, method_i="everything", mask="area", filter_leng
 
     See Also
     --------
-    filter_where_ind : Find indices of an input (numpy.ndarray) that are greater than k.
     filt_area : Checks whether elements in points are signals or Cosmics.
     filt_spectral : Checks whether elements in points are signals or Cosmics.
     flatten : flatten consists of two different filters that can smooth Cosmics out.
@@ -253,34 +195,34 @@ def find_cosmics(dfin, wv_index, method_i="everything", mask="area", filter_leng
         y = np.unique(data_int.index.get_level_values(1))  # indices of y-axis
         length_x_i = len(x)
         length_y_i = len(y)
-        DIN_i = data_int.sort_index().values.reshape(length_x_i, length_y_i, order='C').astype(float)
+        datain_i = data_int.sort_index().values.reshape(length_x_i, length_y_i, order='C').astype(float)
         # reshape data into np array
-        mean_DIN = np.mean(DIN_i)
-        ind_max = filter_where_ind(DIN_i,
-                                   peak_to_noise * mean_DIN)  # indices of data points greater than peak_to_noise*mean
+        mean_din = np.mean(datain_i)
+        ind_max = np.where(datain_i >
+                                   peak_to_noise * mean_din)  # indices of data points greater than peak_to_noise*mean
 
         if method_i == "area":
-            DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-            dfout_i = flatten(DOUT, dfout, wv_index, "area", DIN_i, x, y)
+            data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+            dfout_i = flatten(data_out, dfout, wv_index, "area", datain_i, x, y)
 
         elif method_i == "spectral":
-            DOUT = filt_spectral(ind_max, dfin, wv_index, x, y, filter_length)
-            dfout_i = flatten(DOUT, dfout, wv_index, "spectral", DIN_i, x, y, filter_length)
+            data_out = filt_spectral(ind_max, dfin, wv_index, x, y, filter_length)
+            dfout_i = flatten(data_out, dfout, wv_index, "spectral", datain_i, x, y, filter_length)
 
         elif method_i == "everything":
-            DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-            DOUT = filt_spectral(DOUT, dfin, wv_index, x, y, filter_length)
-            dfout_i = flatten(DOUT, dfout, wv_index, mask, DIN_i, x, y, filter_length, filter_size)
+            data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+            data_out = filt_spectral(data_out, dfin, wv_index, x, y, filter_length)
+            dfout_i = flatten(data_out, dfout, wv_index, mask, datain_i, x, y, filter_length, filter_size)
 
         elif method_i == "opt1":
-            DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-            DOUT = filt_spectral_opt1(DOUT, dfin, wv_index, x, y, mean_datalist_i, filter_length)
-            dfout_i = flatten(DOUT, dfout, wv_index, mask, DIN_i, x, y, filter_length, filter_size)
+            data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+            data_out = filt_spectral_opt1(data_out, dfin, wv_index, x, y, mean_datalist_i, filter_length)
+            dfout_i = flatten(data_out, dfout, wv_index, mask, datain_i, x, y, filter_length, filter_size)
 
         elif method_i == "opt3":
-            DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-            DOUT = filt_spectral_opt3(DOUT, dfin, wv_index, x, y, mean_datalist_i, filter_length)
-            dfout_i = flatten(DOUT, dfout, wv_index, mask, DIN_i, x, y, filter_length, filter_size)
+            data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+            data_out = filt_spectral_opt3(data_out, dfin, wv_index, x, y, mean_datalist_i, filter_length)
+            dfout_i = flatten(data_out, dfout, wv_index, mask, datain_i, x, y, filter_length, filter_size)
 
         else:
             raise ValueError("Method not found")
@@ -293,35 +235,35 @@ def find_cosmics(dfin, wv_index, method_i="everything", mask="area", filter_leng
             y = np.unique(data_int.index.get_level_values(1))  # indices of y-axis
             length_x_i = len(x)
             length_y_i = len(y)
-            DIN_i = data_int.sort_index().values.reshape(length_x_i, length_y_i, order='C').astype(float)
+            datain_i = data_int.sort_index().values.reshape(length_x_i, length_y_i, order='C').astype(float)
             # reshape data into np array
-            mean_DIN = np.mean(DIN_i)
-            ind_max = filter_where_ind(DIN_i,
-                                       peak_to_noise * mean_DIN)
+            mean_din = np.mean(datain_i)
+            ind_max = np.where(datain_i >
+                                       peak_to_noise * mean_din)
             # indices of data points greater than peak_to_noise*mean
 
             if method_i == "area":
-                DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-                dfout_i = flatten(DOUT, dfout, index, "area", DIN_i, x, y)
+                data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+                dfout_i = flatten(data_out, dfout, index, "area", datain_i, x, y)
 
             elif method_i == "spectral":
-                DOUT = filt_spectral(ind_max, dfin, index, x, y, filter_length)
-                dfout_i = flatten(DOUT, dfout, index, "spectral", DIN_i, x, y, filter_length)
+                data_out = filt_spectral(ind_max, dfin, index, x, y, filter_length)
+                dfout_i = flatten(data_out, dfout, index, "spectral", datain_i, x, y, filter_length)
 
             elif method_i == "everything":
-                DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-                DOUT = filt_spectral(DOUT, dfin, index, x, y, filter_length)
-                dfout_i = flatten(DOUT, dfout, index, mask, DIN_i, x, y, filter_length, filter_size)
+                data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+                data_out = filt_spectral(data_out, dfin, index, x, y, filter_length)
+                dfout_i = flatten(data_out, dfout, index, mask, datain_i, x, y, filter_length, filter_size)
 
             elif method_i == "opt1":
-                DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-                DOUT = filt_spectral_opt1(DOUT, dfin, index, x, y, mean_datalist_i, filter_length)
-                dfout_i = flatten(DOUT, dfout, index, mask, DIN_i, x, y, filter_length, filter_size)
+                data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+                data_out = filt_spectral_opt1(data_out, dfin, index, x, y, mean_datalist_i, filter_length)
+                dfout_i = flatten(data_out, dfout, index, mask, datain_i, x, y, filter_length, filter_size)
 
             elif method_i == "opt3":
-                DOUT = filt_area(ind_max, DIN_i, x, y, signal_to_noise, filter_size)
-                DOUT = filt_spectral_opt3(DOUT, dfin, index, x, y, mean_datalist_i, filter_length)
-                dfout_i = flatten(DOUT, dfout, index, mask, DIN_i, x, y, filter_length, filter_size)
+                data_out = filt_area(ind_max, datain_i, x, y, signal_to_noise, filter_size)
+                data_out = filt_spectral_opt3(data_out, dfin, index, x, y, mean_datalist_i, filter_length)
+                dfout_i = flatten(data_out, dfout, index, mask, datain_i, x, y, filter_length, filter_size)
 
             else:
                 raise ValueError("method not found")
@@ -332,7 +274,7 @@ def find_cosmics(dfin, wv_index, method_i="everything", mask="area", filter_leng
     return dfout_i
 
 
-def filt_area(points, DIN, x_i, y_i, signal_to_noise=1.3, var=1):
+def filt_area(points, din, x_i, y_i, signal_to_noise=1.3, var=1):
     """
     Checks whether elements in points are signals or Cosmics.
 
@@ -367,9 +309,9 @@ def filt_area(points, DIN, x_i, y_i, signal_to_noise=1.3, var=1):
     surr_var_loc : Defines a list of index pairs (in numeric counting) around a point.
     filt_surr : Simple filter to check whether the input surr is a signal.
     """
-    DxOUT = []
-    DyOUT = []
-    mean_DIN = np.mean(DIN)
+    dxout = []
+    dyout = []
+    mean_din = np.mean(din)
 
     for i in range(0, len(points[0])):
         x_ind = points[0][i]
@@ -378,16 +320,16 @@ def filt_area(points, DIN, x_i, y_i, signal_to_noise=1.3, var=1):
         reff_check = []
 
         for j in range(0, len(surr)):
-            reff_check.append(filt_surr(DIN[surr[j][0]][surr[j][1]], signal_to_noise, mean_DIN))
+            reff_check.append(filt_surr(din[surr[j][0]][surr[j][1]], signal_to_noise, mean_din))
 
         if "signal" not in reff_check:
-            DxOUT.append(x_ind)
-            DyOUT.append(y_ind)
+            dxout.append(x_ind)
+            dyout.append(y_ind)
 
-    return [DxOUT, DyOUT]
+    return [dxout, dyout]
 
 
-def filt_spectral(points, DIN, wv_index, x_i, y_i, var_i=8,
+def filt_spectral(points, din, wv_index, x_i, y_i, var_i=8,
                   signal_to_noise=1.3):  # points should be the values of x and y rather than indices
     """
     Checks whether elements in points are signals or Cosmics.
@@ -405,8 +347,8 @@ def filt_spectral(points, DIN, wv_index, x_i, y_i, var_i=8,
         List of possible cosmics in the data.
         Points are supposed to be index numbers in numeric counting
         rather than values of x and y.
-    DIN : data frame
-        The spectra of the corresponding data points are extracted from DIN.
+    din : data frame
+        The spectra of the corresponding data points are extracted from din.
     wv_index : int
         Index number (numeric counting) of the wavelength of our data_points.
     x_i, y_i : list
@@ -431,15 +373,15 @@ def filt_spectral(points, DIN, wv_index, x_i, y_i, var_i=8,
     Would be nice to just use iloc right? Nope iloc with MultiIndices works miserable...
     x_ind = x_i[points[0][i]]
     y_ind = y_i[points[1][i]]
-    wv_data = DIN.loc[(x_ind, y_ind)]
+    wv_data = din.loc[(x_ind, y_ind)]
     """
 
-    DxOUT = []
-    DyOUT = []
+    dxout = []
+    dyout = []
     for i in range(0, len(points[0])):
         x_ind = x_i[points[0][i]]
         y_ind = y_i[points[1][i]]
-        wv_data = DIN.loc[(x_ind, y_ind)]
+        wv_data = din.loc[(x_ind, y_ind)]
         wv_data_mean = wv_data.mean()
         reff_check = []
         iterator = it_list_var_2(wv_index, wv_data, var_i)
@@ -447,13 +389,13 @@ def filt_spectral(points, DIN, wv_index, x_i, y_i, var_i=8,
         for j in iterator:
             reff_check.append(filt_surr(wv_data.iloc[wv_index + j], signal_to_noise, wv_data_mean))
         if reff_check.count("signal") < len(iterator) / 2:
-            DxOUT.append(points[0][i])
-            DyOUT.append(points[1][i])
+            dxout.append(points[0][i])
+            dyout.append(points[1][i])
 
-    return [DxOUT, DyOUT]
+    return [dxout, dyout]
 
 
-def filt_spectral_opt1(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
+def filt_spectral_opt1(points, din, wv_index, x_i, y_i, mean_datalist, var_i=8,
                        signal_to_noise=1.3):  # points should contain the values of x and y rather than indices
     """
     Checks whether elements in points are signals or Cosmics.
@@ -472,8 +414,8 @@ def filt_spectral_opt1(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
         List of possible cosmics in the data.
         Points are supposed to be index numbers in numeric counting
         rather than values of x and y.
-    DIN : data frame
-        The spectrum of the corresponding data points is extracted from DIN.
+    din : data frame
+        The spectrum of the corresponding data points is extracted from din.
     wv_index : int
         Index number (numeric counting) of the wavelength of our data_points.
     x_i, y_i : list
@@ -501,24 +443,24 @@ def filt_spectral_opt1(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
     Examples
     --------
     """
-    DxOUT = []
-    DyOUT = []
+    dxout = []
+    dyout = []
     for i in range(0, len(points[0])):
         x_ind = x_i[points[0][i]]
         y_ind = y_i[points[1][i]]
-        wv_data = DIN.loc[(x_ind, y_ind)]
+        wv_data = din.loc[(x_ind, y_ind)]
         reff_check = []
         iterator = it_list_var_2(wv_index, wv_data, var_i)
         iterator.remove(0)
         for j in iterator:
             reff_check.append(filt_surr(wv_data.iloc[wv_index + j], signal_to_noise, mean_datalist[wv_index + j]))
         if reff_check.count("signal") < len(iterator) / 2:
-            DxOUT.append(points[0][i])
-            DyOUT.append(points[1][i])
-    return [DxOUT, DyOUT]
+            dxout.append(points[0][i])
+            dyout.append(points[1][i])
+    return [dxout, dyout]
 
 
-def filt_spectral_opt3(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
+def filt_spectral_opt3(points, din, wv_index, x_i, y_i, mean_datalist, var_i=8,
                        signal_to_noise=1.3):  # points should be the values of x and y rather than indices
     """
     Checks whether elements in points are signals or Cosmics.
@@ -538,8 +480,8 @@ def filt_spectral_opt3(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
         List of possible cosmics in the data.
         Points are supposed to be index numbers in numeric counting
         rather than values of x and y.
-    DIN : data frame
-        The spectrum of the corresponding data points is extracted from DIN.
+    din : data frame
+        The spectrum of the corresponding data points is extracted from din.
     wv_index : int
         Index number (numeric counting) of the wavelength of our data_points.
     x_i, y_i : list
@@ -566,21 +508,21 @@ def filt_spectral_opt3(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
     filt_area : Checks whether elements in points are signals or Cosmics.
     """
 
-    DxOUT = []
-    DyOUT = []
+    dxout = []
+    dyout = []
 
     for i in range(0, len(points[0])):
         x_ind = x_i[points[0][i]]
         y_ind = y_i[points[1][i]]
         surr = surr_var_loc(points[0][i], points[1][i], x_i, y_i)
-        wv_data = DIN.loc[(x_ind, y_ind)]
+        wv_data = din.loc[(x_ind, y_ind)]
         reff_check = []
         reff_check_i = []
         iterator = it_list_var_2(wv_index, wv_data, var_i)
         iterator.remove(0)
         for j in iterator:
             if filt_surr(wv_data.iloc[wv_index + j], signal_to_noise, mean_datalist[wv_index + j]) == "signal":
-                d_array = DIN.iloc[pd.IndexSlice[:], wv_index + j].sort_index().values.reshape(len(x_i), len(y_i),
+                d_array = din.iloc[pd.IndexSlice[:], wv_index + j].sort_index().values.reshape(len(x_i), len(y_i),
                                                                                                order='C').astype(float)
                 for k in range(0, len(surr)):
                     reff_check_i.append(
@@ -588,13 +530,13 @@ def filt_spectral_opt3(points, DIN, wv_index, x_i, y_i, mean_datalist, var_i=8,
                 if "signal" in reff_check_i:
                     reff_check.append("signal")
         if reff_check.count("signal") < 1:
-            DxOUT.append(points[0][i])
-            DyOUT.append(points[1][i])
+            dxout.append(points[0][i])
+            dyout.append(points[1][i])
 
-    return [DxOUT, DyOUT]
+    return [dxout, dyout]
 
 
-def flatten(points, dfout, wv_index, method, DIN, x_i, y_i, var_i=8, var=1):
+def flatten(points, dfout, wv_index, method, din, x_i, y_i, var_i=8, var=1):
     """
     Flatten offers two different methods to eradicate those pesky little Cosmics.
 
@@ -658,7 +600,7 @@ def flatten(points, dfout, wv_index, method, DIN, x_i, y_i, var_i=8, var=1):
             surr = surr_var_loc(points[0][i], points[1][i], x_i, y_i, var)
             avg_surr4 = 0
             for j in range(0, len(surr)):
-                avg_surr4 += DIN[surr[j][0]][surr[j][1]]
+                avg_surr4 += din[surr[j][0]][surr[j][1]]
             dfout.loc[(x_ind, y_ind), list(dfout.columns.values)[wv_index]] = avg_surr4 / (len(surr))
 
     return dfout
