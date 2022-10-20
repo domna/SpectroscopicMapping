@@ -7,6 +7,48 @@ import pandas as pd
 from mapping.reader.reader import Reader
 
 
+def read_axes(h5_file: h5py.File, measurement_index: list) -> pd.MultiIndex:
+    """Reads the axes from an hdf5 file into a pandas multiindex.
+
+    Args:
+        h5_file (h5py.File): The h5py file object to read from.
+        measurement_index (list): The index of the current measurement.
+
+    Raises:
+        ValueError:
+            The entries should be position groups in the hdf5 file.
+            Otherwise this error is thrown.
+
+    Returns:
+        pd.MultiIndex: The multiindex containing (x, y) data value pairs.
+    """
+
+    x_axis_grp = h5_file[measurement_index]
+    if not isinstance(x_axis_grp, h5py.Group):
+        raise ValueError(f"Entry {measurement_index} should be a group.")
+    x_axis = list(filter(lambda x: x != "Wavelength", x_axis_grp.keys()))
+
+    y_axis_grp = h5_file[f"{measurement_index}/{x_axis[0]}"]
+    if not isinstance(y_axis_grp, h5py.Group):
+        raise ValueError(f"Entry {measurement_index}/{x_axis[0]} should be a group.")
+    y_axis = list(y_axis_grp.keys())
+
+    x_meshg, y_meshg = np.meshgrid(x_axis, y_axis, indexing="ij")
+
+    idx = pd.MultiIndex.from_arrays(
+        [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
+    )
+    # Convert x, y to float
+    idx = idx.set_levels(
+        [
+            idx.levels[0].astype(float),
+            idx.levels[1].astype(float),
+        ]
+    )
+
+    return idx
+
+
 @dataclass
 class HdfReader(Reader):
     """This is a class to read hdf data"""
@@ -15,24 +57,23 @@ class HdfReader(Reader):
         with h5py.File(fname, "r") as h5_file:
 
             measurement_index = list(h5_file.keys())[0]
-            x_axis = list(
-                filter(lambda x: x != "Wavelength", h5_file[measurement_index].keys())
-            )
-            y_axis = list(h5_file[f"{measurement_index}/{x_axis[0]}"].keys())
-            x_meshg, y_meshg = np.meshgrid(x_axis, y_axis, indexing="ij")
+            idx = read_axes(h5_file, measurement_index)
+            self.index = idx.copy()
 
             if custom_wavelength is None:
+                wavelength_grp = h5_file[f"{measurement_index}/Wavelength"]
+                if not isinstance(wavelength_grp, h5py.Dataset):
+                    raise ValueError(
+                        f"Entry {measurement_index}/Wavelength should be a dataset."
+                    )
+
                 data = pd.DataFrame(
-                    index=pd.MultiIndex.from_arrays(
-                        [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
-                    ),
-                    columns=h5_file[f"{measurement_index}/Wavelength"],
+                    index=idx,
+                    columns=np.array(wavelength_grp[:]),
                 )
             else:
                 data = pd.DataFrame(
-                    index=pd.MultiIndex.from_arrays(
-                        [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
-                    ),
+                    index=idx,
                     columns=custom_wavelength,
                 )
             data.columns.name = "Wavelength"
@@ -45,12 +86,6 @@ class HdfReader(Reader):
                 y_pos_sens.append(dataset.attrs["Sensor Y"])
 
                 data.loc[x_axis, y_axis] = np.array(dataset)
-
-            # Convert x, y to float
-            data.index = data.index.set_levels(
-                [data.index.levels[0].astype(float), data.index.levels[1].astype(float)]
-            )
-            self.index = data.index.copy()
 
             if interpolate:
                 data.index = pd.MultiIndex.from_arrays(
