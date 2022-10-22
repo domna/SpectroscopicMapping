@@ -1,10 +1,11 @@
 """A reader for data in the hdf file format"""
-from dataclasses import dataclass
+from typing import Optional
+from numpy.typing import ArrayLike
 import numpy as np
 import h5py
 import pandas as pd
 
-from mapping.reader.reader import Reader
+from mapping.reader.reader import Reader, MapData
 
 
 def read_axes(h5_file: h5py.File, measurement_index: list) -> pd.MultiIndex:
@@ -38,27 +39,23 @@ def read_axes(h5_file: h5py.File, measurement_index: list) -> pd.MultiIndex:
     idx = pd.MultiIndex.from_arrays(
         [x_meshg.flatten(), y_meshg.flatten()], names=["x", "y"]
     )
-    # Convert x, y to float
-    idx = idx.set_levels(
-        [
-            idx.levels[0].astype(float),
-            idx.levels[1].astype(float),
-        ]
-    )
 
     return idx
 
 
-@dataclass
 class HdfReader(Reader):
     """This is a class to read hdf data"""
 
-    def read(self, fname: str, interpolate: str, custom_wavelength: pd.Index) -> None:
+    def read(
+        self,
+        fname: str,
+        interpolate_to: Optional[ArrayLike] = None,
+        custom_wavelength: Optional[pd.Index] = None,
+    ) -> MapData:
         with h5py.File(fname, "r") as h5_file:
 
             measurement_index = list(h5_file.keys())[0]
             idx = read_axes(h5_file, measurement_index)
-            self.index = idx.copy()
 
             if custom_wavelength is None:
                 wavelength_grp = h5_file[f"{measurement_index}/Wavelength"]
@@ -87,10 +84,18 @@ class HdfReader(Reader):
 
                 data.loc[x_axis, y_axis] = np.array(dataset)
 
-            if interpolate:
-                data.index = pd.MultiIndex.from_arrays(
-                    [x_pos_sens, y_pos_sens], names=["x", "y"]
+            if interpolate_to is not None:
+                raise NotImplementedError(
+                    "Axes interpolation is not implemented for hdf files."
                 )
-                self.is_interp = True
 
-        self.dataframe = data
+            data.index = pd.MultiIndex.from_arrays(
+                [x_pos_sens, y_pos_sens], names=["x", "y"]
+            )
+            idx = idx.set_levels(
+                [
+                    idx.levels[0].astype(float),
+                    idx.levels[1].astype(float),
+                ]
+            )
+            return MapData(data=data, index=idx, is_interpolated=False)

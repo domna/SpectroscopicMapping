@@ -1,26 +1,30 @@
 """An abstract reader class to serve as a template for specific readers"""
+from typing import Optional
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Union
-import numpy.typing as npt
+from numpy.typing import ArrayLike
 import pandas as pd
 
 
 @dataclass
+class MapData:
+    """Represents a mapping data object"""
+
+    is_interpolated: bool
+    index: pd.Index
+    data: pd.DataFrame
+
+
 class Reader:
     """This is a generic reader class"""
-
-    index: pd.Index
-    dataframe: pd.DataFrame
-    is_interp: bool = False
 
     @abstractmethod
     def read(
         self,
         fname: str,
-        interpolate: Union[str, npt.ArrayLike],
-        custom_wavelength: pd.Index,
-    ) -> None:
+        interpolate_to: Optional[ArrayLike],
+        custom_wavelength: Optional[pd.Index],
+    ) -> MapData:
         """Reads a datafile into a multiindex dataframe
 
         Args:
